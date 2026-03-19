@@ -293,6 +293,11 @@ pub mod websocket {
     pub use lightyear_websocket::*;
 }
 
+#[cfg(feature = "iroh")]
+pub mod iroh {
+    pub use lightyear_iroh::*;
+}
+
 #[cfg(feature = "avian2d")]
 pub mod avian2d {
     pub use lightyear_avian2d::*;
@@ -355,6 +360,10 @@ pub mod prelude {
     #[cfg(feature = "websocket")]
     pub use lightyear_websocket::prelude::*;
 
+    #[allow(unused_imports)]
+    #[cfg(feature = "iroh")]
+    pub use lightyear_iroh::prelude::*;
+
     #[cfg(feature = "steam")]
     pub use lightyear_steam::prelude::*;
 
@@ -400,6 +409,8 @@ pub mod prelude {
         pub use lightyear_connection::prelude::client::*;
         pub use lightyear_sync::prelude::client::*;
 
+        #[cfg(feature = "iroh")]
+        pub use lightyear_iroh::prelude::client::*;
         #[cfg(feature = "netcode")]
         pub use lightyear_netcode::prelude::client::*;
         #[cfg(feature = "raw_connection")]
@@ -426,6 +437,8 @@ pub mod prelude {
         #[cfg(all(not(target_family = "wasm"), feature = "udp", feature = "server"))]
         pub use lightyear_udp::prelude::server::*;
 
+        #[cfg(feature = "iroh")]
+        pub use lightyear_iroh::prelude::server::*;
         #[cfg(feature = "netcode")]
         pub use lightyear_netcode::prelude::server::*;
         #[cfg(feature = "raw_connection")]

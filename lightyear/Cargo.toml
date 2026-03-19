@@ -62,6 +62,7 @@ client = [
   "lightyear_transport/client",
   "lightyear_webtransport?/client",
   "lightyear_websocket?/client",
+  "lightyear_iroh?/client",
 ]
 ## enable server plugins and server-only features
 server = [
@@ -81,6 +82,7 @@ server = [
   "lightyear_udp?/server",
   "lightyear_webtransport?/server",
   "lightyear_websocket?/server",
+  "lightyear_iroh?/server",
 ]
 ## Adds helper plugins to use for deterministic replication (where only inputs are replicated)
 deterministic = [
@@ -167,6 +169,10 @@ webtransport_dangerous_configuration = [
 ## Enable WebSocket support as an IO layer (defers to aeronet_websocket)
 websocket = ["std", "dep:lightyear_websocket"]
 websocket_self_signed = ["lightyear_websocket/self-signed"]
+## Enable iroh QUIC support as an IO layer (defers to aeronet_iroh, native-only)
+iroh = ["std", "dep:lightyear_iroh"]
+## Enable gossip-based room discovery via iroh (requires iroh feature, native-only)
+iroh_discovery = ["iroh", "lightyear_iroh/discovery"]
 
 # CONNECTION LAYERS
 ## Enables Steam as a connection layer
@@ -204,6 +210,7 @@ lightyear_crossbeam = { workspace = true, optional = true }
 lightyear_raw_connection = { workspace = true, optional = true }
 lightyear_webtransport = { workspace = true, optional = true }
 lightyear_websocket = { workspace = true, optional = true }
+lightyear_iroh = { workspace = true, optional = true }
 lightyear_steam = { workspace = true, optional = true }
 lightyear_ui = { workspace = true, optional = true }
 
