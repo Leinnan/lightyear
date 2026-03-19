@@ -108,7 +108,7 @@ lightyear_web = { path = "./lightyear_web", version = "0.26.4", default-features
 lightyear_webtransport = { path = "./lightyear_webtransport", version = "0.26.4", default-features = false }
 lightyear_websocket = { path = "./lightyear_websocket", version = "0.26.4", default-features = false }
 lightyear_iroh = { path = "./lightyear_iroh", version = "0.26.4", default-features = false }
-aeronet_iroh = { git = "https://github.com/Leinnan/areonet", branch = "iroh" }
+aeronet_iroh = { git = "https://github.com/Leinnan/aeronet", branch = "iroh" }
 
 # examples
 lightyear_examples_common = { path = "./examples/common", version = "0.26.4", default-features = false }
