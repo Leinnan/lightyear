@@ -1,5 +1,8 @@
+extern crate alloc;
+
 #[cfg(feature = "client")]
 pub mod client;
+pub mod connection;
 #[cfg(feature = "server")]
 pub mod server;
 
@@ -8,6 +11,8 @@ pub enum IrohError {
     #[error("IrohRuntime resource missing; insert IrohRuntime before starting")]
     RuntimeMissing,
 }
+
+pub use connection::{endpoint_id_to_peer_id, IrohConnectionPlugin};
 
 /// Gossip-based room discovery using iroh-gossip.
 ///
@@ -24,6 +29,7 @@ pub mod discovery {
 }
 
 pub mod prelude {
+    pub use crate::connection::IrohConnectionPlugin;
     pub use crate::IrohError;
     pub use aeronet_iroh::IrohRuntime;
 

@@ -1,8 +1,8 @@
-use aeronet_io::Session;
 use aeronet_io::connection::PeerAddr;
 use aeronet_iroh::iroh::Endpoint;
 use aeronet_iroh::server::{IrohServer, IrohServerClient};
 pub use aeronet_iroh::server::{SessionRequest, SessionResponse};
+use aeronet_iroh::SessionEstablished;
 use bevy_app::{App, Plugin};
 use bevy_ecs::prelude::*;
 use lightyear_aeronet::server::ServerAeronetPlugin;
@@ -64,27 +64,60 @@ impl IrohServerPlugin {
         Ok(())
     }
 
+    /// Observes [`SessionEstablished`] (fired by `aeronet_iroh` when the QUIC
+    /// handshake completes) to create a lightyear [`LinkOf`] entity for each
+    /// accepted client session.
+    ///
+    /// # Why `SessionEstablished` instead of `On<Add, Session>`?
+    ///
+    /// The previous implementation observed `On<Add, Session>` and queried
+    /// `(&ChildOf, &PeerAddr)` — a **required** `&PeerAddr` that is absent for
+    /// relay-only connections (where no direct socket path was selected).
+    /// This caused relay sessions to be silently dropped: the query returned
+    /// `Err`, the `if let Ok(...)` swallowed the failure, and no `LinkOf`
+    /// entity was ever created.
+    ///
+    /// [`SessionEstablished`] carries `peer_addr: Option<SocketAddr>` as a
+    /// field, so this observer handles both direct and relay-only sessions
+    /// correctly without any fragile component queries.
     fn on_connection(
-        trigger: On<Add, Session>,
+        trigger: On<SessionEstablished>,
         aeronet_query: Query<&AeronetLinkOf>,
-        child_query: Query<(&ChildOf, &PeerAddr), With<IrohServerClient>>,
+        child_query: Query<&ChildOf, With<IrohServerClient>>,
         mut commands: Commands,
     ) {
-        if let Ok((child_of, peer_addr)) = child_query.get(trigger.entity)
-            && let Ok(server_link) = aeronet_query.get(child_of.parent())
-        {
-            let link_entity = commands
-                .spawn((
-                    LinkOf {
-                        server: server_link.0,
-                    },
-                    Link::new(None),
-                    PeerAddr(peer_addr.0),
-                ))
-                .id();
-            commands
-                .entity(trigger.entity)
-                .insert((AeronetLinkOf(link_entity), Name::from("IrohClientOf")));
+        let event = trigger.event();
+        let session_entity = event.entity;
+
+        let Ok(child_of) = child_query.get(session_entity) else {
+            return;
+        };
+        let Ok(server_link) = aeronet_query.get(child_of.parent()) else {
+            return;
+        };
+
+        // Spawn the lightyear LinkOf entity that represents this client
+        // connection in the higher-level connection/transport/messages layers.
+        let mut link_spawn = commands.spawn((
+            LinkOf {
+                server: server_link.0,
+            },
+            Link::new(None),
+        ));
+
+        // PeerAddr is optional: relay-only connections have no direct socket
+        // address. Insert it only when available so downstream components that
+        // observe `On<Add, PeerAddr>` receive accurate data.
+        if let Some(peer_addr) = event.peer_addr {
+            link_spawn.insert(PeerAddr(peer_addr));
         }
+
+        let link_entity = link_spawn.id();
+
+        // Connect the aeronet session entity → lightyear link entity so that
+        // `lightyear_aeronet`'s receive/send systems can bridge packet buffers.
+        commands
+            .entity(session_entity)
+            .insert((AeronetLinkOf(link_entity), Name::from("IrohClientOf")));
     }
 }
