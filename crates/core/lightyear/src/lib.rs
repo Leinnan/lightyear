@@ -362,6 +362,11 @@ pub mod websocket {
     pub use lightyear_websocket::*;
 }
 
+#[cfg(feature = "iroh")]
+pub mod iroh {
+    pub use lightyear_iroh::*;
+}
+
 #[cfg(feature = "avian2d")]
 pub mod avian2d {
     pub use lightyear_avian2d::*;
@@ -431,6 +436,10 @@ pub mod prelude {
     #[cfg(feature = "websocket")]
     pub use lightyear_websocket::prelude::*;
 
+    #[allow(unused_imports)]
+    #[cfg(feature = "iroh")]
+    pub use lightyear_iroh::prelude::*;
+
     #[cfg(feature = "steam")]
     pub use lightyear_steam::prelude::*;
 
@@ -493,6 +502,8 @@ pub mod prelude {
         pub use lightyear_steam::prelude::client::*;
         #[cfg(feature = "websocket")]
         pub use lightyear_websocket::prelude::client::*;
+        #[cfg(feature = "iroh")]
+        pub use lightyear_iroh::prelude::client::*;
         #[cfg(feature = "webtransport")]
         pub use lightyear_webtransport::prelude::client::*;
 
@@ -519,6 +530,8 @@ pub mod prelude {
         pub use lightyear_steam::prelude::server::*;
         #[cfg(all(feature = "websocket", not(target_family = "wasm")))]
         pub use lightyear_websocket::prelude::server::*;
+        #[cfg(feature = "iroh")]
+        pub use lightyear_iroh::prelude::server::*;
         #[cfg(all(feature = "webtransport", not(target_family = "wasm")))]
         pub use lightyear_webtransport::prelude::server::*;
 
