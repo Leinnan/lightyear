@@ -17,8 +17,8 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [features]
 default = []
-client = ["aeronet_iroh/client"]
-server = ["aeronet_iroh/server"]
+client = []
+server = []
 ## Enable gossip-based room discovery (requires iroh-gossip, native-only)
 discovery = ["aeronet_iroh/discovery"]
 

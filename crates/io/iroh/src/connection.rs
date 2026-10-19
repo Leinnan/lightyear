@@ -67,8 +67,14 @@ use tracing::trace;
 
 #[cfg(feature = "client")]
 use crate::client::IrohClientIo;
+#[cfg(feature = "client")]
+use crate::endpoint::IrohLinkEndpoint;
+#[cfg(feature = "server")]
+use crate::endpoint::IrohRemoteId;
 #[cfg(feature = "server")]
 use crate::server::IrohServerIo;
+#[cfg(feature = "client")]
+use aeronet_iroh::endpoint::IrohEndpoint;
 
 /// Converts an iroh [`EndpointId`](aeronet_iroh::iroh::EndpointId) to a
 /// stable [`PeerId`] for use as [`LocalId`] / [`RemoteId`] in lightyear.
@@ -105,13 +111,17 @@ impl IrohConnectionPlugin {
     #[cfg(feature = "client")]
     fn on_client_linked(
         trigger: On<Add, Linked>,
-        query: Query<(&IrohClientIo, Option<&aeronet_iroh::RemoteEndpointId>), Without<Connected>>,
+        query: Query<&IrohLinkEndpoint, (With<IrohClientIo>, Without<Connected>)>,
+        endpoint_query: Query<&IrohEndpoint>,
         mut commands: Commands,
     ) {
-        let Ok((io, _remote)) = query.get(trigger.entity) else {
+        let Ok(endpoint) = query.get(trigger.entity) else {
             return;
         };
-        let local_peer_id = endpoint_id_to_peer_id(io.endpoint.id());
+        let Ok(endpoint) = endpoint_query.get(endpoint.0) else {
+            return;
+        };
+        let local_peer_id = endpoint_id_to_peer_id(endpoint.id());
         trace!(
             entity = ?trigger.entity,
             local_id = ?local_peer_id,
@@ -157,9 +167,9 @@ impl IrohConnectionPlugin {
         }
     }
 
-    /// Complete an explicit stop after the asynchronous endpoint close finishes.
+    /// Complete an explicit stop once the endpoint is unlinked.
     /// The shared connection observer handles `Started`, but `Stop` has already
-    /// replaced that marker with `Stopping` by the time Aeronet reports closure.
+    /// replaced that marker with `Stopping` by the time the server is unlinked.
     #[cfg(feature = "server")]
     fn on_server_unlinked(
         trigger: On<Add, Unlinked>,
@@ -174,45 +184,29 @@ impl IrohConnectionPlugin {
     /// For iroh servers, when a [`LinkOf`] entity gets `Linked` it also
     /// becomes `Connected` + [`ClientOf`].
     ///
-    /// [`RemoteId`] is derived from [`aeronet_iroh::RemoteEndpointId`] on the
-    /// corresponding aeronet session entity (inserted by `aeronet_iroh` when
-    /// the QUIC handshake completes). The session entity is located via the
-    /// `AeronetLinkOf` component on the session entity — we reverse-lookup
-    /// via `AeronetLinkOf` to find which session entity points to this link.
+    /// [`RemoteId`] is derived from the [`IrohRemoteId`] that `IrohServerPlugin`
+    /// inserts on the link from the authenticated iroh session.
     ///
     /// Falls back to an entity-bits-based [`PeerId`] if the identity is absent,
     /// which should not happen in practice.
     #[cfg(feature = "server")]
     fn on_link_of_linked(
         trigger: On<Add, Linked>,
-        link_of_query: Query<&LinkOf, Without<Connected>>,
+        link_of_query: Query<(&LinkOf, Option<&IrohRemoteId>), Without<Connected>>,
         server_query: Query<(), With<IrohServerIo>>,
-        // Query all session entities that point to a link entity, so we can
-        // reverse-look up which session corresponds to this newly linked entity.
-        // aeronet_iroh inserts RemoteEndpointId on session entities;
-        // lightyear_aeronet does not auto-propagate it to Link entities.
-        session_query: Query<(
-            Entity,
-            &lightyear_aeronet::AeronetLinkOf,
-            &aeronet_iroh::RemoteEndpointId,
-        )>,
         mut commands: Commands,
     ) {
-        let Ok(link_of) = link_of_query.get(trigger.entity) else {
+        let Ok((link_of, remote_id)) = link_of_query.get(trigger.entity) else {
             return;
         };
         if server_query.get(link_of.endpoint).is_err() {
             return;
         }
 
-        // Find the session entity whose AeronetLinkOf points to this link entity,
-        // then read its RemoteEndpointId for a stable peer identity.
-        let link_entity = trigger.entity;
-        let remote_peer_id: PeerId = session_query
-            .iter()
-            .find(|(_, aeronet_link_of, _)| aeronet_link_of.0 == link_entity)
-            .map(|(_, _, remote_id)| endpoint_id_to_peer_id(remote_id.0))
-            .unwrap_or_else(|| PeerId::Entity(link_entity.to_bits()));
+        let remote_peer_id = remote_id.map_or_else(
+            || PeerId::Entity(trigger.entity.to_bits()),
+            |remote_id| endpoint_id_to_peer_id(remote_id.0),
+        );
 
         trace!(
             entity = ?trigger.entity,
@@ -240,11 +234,13 @@ impl IrohConnectionPlugin {
             return Ok(());
         };
         trace!(entity = ?trigger.entity, "IrohServer Stop → Unlink + disconnect clients");
+        // Insert `Stopping` first: closing the iroh endpoint unlinks synchronously, and
+        // `on_server_unlinked` only completes the stop while `Stopping` is present.
+        commands.entity(trigger.entity).insert(Stopping);
         commands.trigger(Unlink {
             entity: trigger.entity,
             reason: UnlinkReason::ServerStopped,
         });
-        commands.entity(trigger.entity).insert(Stopping);
 
         // SAFETY: the Endpoint relationship collection contains unique entities.
         let client_entities: &[Entity] = server.collection();

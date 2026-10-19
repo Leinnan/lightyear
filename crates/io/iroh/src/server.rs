@@ -1,16 +1,20 @@
-use aeronet_io::connection::PeerAddr;
-use aeronet_iroh::SessionEstablished;
-use aeronet_iroh::iroh::Endpoint;
-use aeronet_iroh::server::{IrohServer, IrohServerClient};
-pub use aeronet_iroh::server::{SessionRequest, SessionResponse};
+use aeronet_io::Session;
+use aeronet_iroh::endpoint::{EndpointClosed, IrohEndpoint};
+use aeronet_iroh::iroh::endpoint::Builder;
+use aeronet_iroh::session::{IrohSession, SessionSide};
+pub use aeronet_iroh::session::{SessionRequest, SessionResponse};
+use alloc::format;
+use alloc::sync::Arc;
 use bevy_app::{App, Plugin};
 use bevy_ecs::prelude::*;
-use lightyear_aeronet::endpoint::EndpointAeronetPlugin;
 use lightyear_aeronet::{AeronetLinkOf, AeronetPlugin};
+use lightyear_link::endpoint::EndpointLinkPlugin;
 use lightyear_link::prelude::LinkOf;
 use lightyear_link::server::Server;
-use lightyear_link::{Link, LinkStart, Linked, Linking};
+use lightyear_link::{Link, LinkStart, Linked, Linking, UnlinkReason, Unlinked};
 use tracing::info;
+
+use crate::endpoint::{self, BuilderFn, IrohLinkEndpoint, IrohRemoteId};
 
 /// Allows using [`IrohServerIo`] as an IO layer.
 pub struct IrohServerPlugin;
@@ -20,17 +24,34 @@ pub struct IrohServerPlugin;
 /// Attach this to an entity to start an iroh server when [`LinkStart`] is triggered.
 /// The entity automatically gains a [`Server`] component (required).
 ///
-/// Accepted client sessions fire [`SessionRequest`] on the server entity —
-/// the application **must** respond with [`SessionRequest::respond`] using
-/// [`SessionResponse::Accepted`] or [`SessionResponse::Rejected`].
+/// On [`LinkStart`] a child [`IrohEndpoint`] entity is opened from a fresh [`Builder`]; its entity
+/// is stored in [`IrohLinkEndpoint`]. The builder must accept the ALPN clients connect with.
 ///
-/// The [`aeronet_iroh::IrohRuntime`] resource must be present (auto-inserted
-/// by [`IrohServerPlugin`] if absent).
+/// Every incoming session fires [`SessionRequest`] on that endpoint entity — the application
+/// **must** respond with [`SessionRequest::respond`] using [`SessionResponse::Accepted`] or
+/// [`SessionResponse::Rejected`].
+///
+/// The [`aeronet_iroh::IrohRuntime`] resource is inserted automatically if absent.
 #[derive(Component)]
 #[require(Server)]
 pub struct IrohServerIo {
-    /// The already-bound iroh endpoint to listen on.
-    pub endpoint: Endpoint,
+    /// Creates the iroh endpoint builder each time the server starts.
+    pub builder: BuilderFn,
+    /// Open the endpoint with gossip room discovery. The builder must also accept
+    /// `iroh_gossip::net::GOSSIP_ALPN`.
+    #[cfg(feature = "discovery")]
+    pub discovery: bool,
+}
+
+impl IrohServerIo {
+    /// Create a server IO whose endpoint is built by `builder` on every [`LinkStart`].
+    pub fn new(builder: impl Fn() -> Builder + Send + Sync + 'static) -> Self {
+        Self {
+            builder: Arc::new(builder),
+            #[cfg(feature = "discovery")]
+            discovery: false,
+        }
+    }
 }
 
 impl Plugin for IrohServerPlugin {
@@ -38,11 +59,14 @@ impl Plugin for IrohServerPlugin {
         if !app.is_plugin_added::<AeronetPlugin>() {
             app.add_plugins(AeronetPlugin);
         }
-        if !app.is_plugin_added::<EndpointAeronetPlugin>() {
-            app.add_plugins(EndpointAeronetPlugin);
+        if !app.is_plugin_added::<EndpointLinkPlugin>() {
+            app.add_plugins(EndpointLinkPlugin);
         }
-        app.add_plugins(aeronet_iroh::server::IrohServerPlugin);
+        endpoint::add_iroh_plugin(app);
         app.add_observer(Self::link);
+        app.add_observer(Self::on_opened);
+        app.add_observer(Self::on_closed);
+        app.add_observer(Self::on_unlinked);
         app.add_observer(Self::on_connection);
     }
 }
@@ -50,69 +74,104 @@ impl Plugin for IrohServerPlugin {
 impl IrohServerPlugin {
     fn link(
         trigger: On<LinkStart>,
-        query: Query<(Entity, &IrohServerIo), (Without<Linking>, Without<Linked>)>,
+        query: Query<&IrohServerIo, (Without<Linking>, Without<Linked>)>,
         mut commands: Commands,
     ) -> Result {
-        if let Ok((entity, io)) = query.get(trigger.entity) {
-            let endpoint = io.endpoint.clone();
-            commands.queue(move |world: &mut World| {
-                info!("IrohServer starting");
-                let child = world.spawn((AeronetLinkOf(entity), Name::from("IrohServer")));
-                IrohServer::open(endpoint).apply(child);
-            });
+        if let Ok(io) = query.get(trigger.entity) {
+            info!("IrohServer starting");
+            #[cfg(feature = "discovery")]
+            let discovery = io.discovery;
+            #[cfg(not(feature = "discovery"))]
+            let discovery = false;
+            let endpoint = commands
+                .spawn((AeronetLinkOf(trigger.entity), Name::from("IrohServer")))
+                .queue(endpoint::open((io.builder)(), discovery))
+                .id();
+            commands
+                .entity(trigger.entity)
+                .insert((Linking, IrohLinkEndpoint(endpoint)));
         }
         Ok(())
     }
 
-    /// Observes [`SessionEstablished`] (fired by `aeronet_iroh` when the QUIC
-    /// handshake completes) to create a lightyear [`LinkOf`] entity for each
-    /// accepted client session.
-    ///
-    /// # Why `SessionEstablished` instead of `On<Add, Session>`?
-    ///
-    /// The previous implementation observed `On<Add, Session>` and queried
-    /// `(&ChildOf, &PeerAddr)` — a **required** `&PeerAddr` that is absent for
-    /// relay-only connections (where no direct socket path was selected).
-    /// This caused relay sessions to be silently dropped: the query returned
-    /// `Err`, the `if let Ok(...)` swallowed the failure, and no `LinkOf`
-    /// entity was ever created.
-    ///
-    /// [`SessionEstablished`] carries `peer_addr: Option<SocketAddr>` as a
-    /// field, so this observer handles both direct and relay-only sessions
-    /// correctly without any fragile component queries.
-    fn on_connection(
-        trigger: On<SessionEstablished>,
-        aeronet_query: Query<&AeronetLinkOf>,
-        child_query: Query<&ChildOf, With<IrohServerClient>>,
+    /// The endpoint has bound: the server is linked.
+    fn on_opened(
+        trigger: On<Add, IrohEndpoint>,
+        endpoint_query: Query<&AeronetLinkOf>,
+        server_query: Query<(), With<IrohServerIo>>,
         mut commands: Commands,
     ) {
-        let event = trigger.event();
-        let session_entity = event.entity;
+        if let Ok(server) = endpoint_query.get(trigger.entity)
+            && server_query.contains(server.0)
+        {
+            commands.entity(server.0).insert(Linked);
+        }
+    }
 
-        let Ok(child_of) = child_query.get(session_entity) else {
+    /// The endpoint failed to bind or closed unexpectedly.
+    fn on_closed(
+        trigger: On<EndpointClosed>,
+        endpoint_query: Query<&AeronetLinkOf>,
+        server_query: Query<(), With<IrohServerIo>>,
+        mut commands: Commands,
+    ) {
+        if let Ok(server) = endpoint_query.get(trigger.entity)
+            && server_query.contains(server.0)
+        {
+            commands.entity(server.0).try_insert(Unlinked {
+                reason: UnlinkReason::TransportError(format!("{}", trigger.error)),
+            });
+        }
+    }
+
+    /// Close the endpoint whenever the server becomes unlinked. `EndpointLinkPlugin` already
+    /// unlinks and despawns the server's [`LinkOf`] entities.
+    fn on_unlinked(
+        trigger: On<Add, Unlinked>,
+        query: Query<&IrohLinkEndpoint, With<IrohServerIo>>,
+        mut commands: Commands,
+    ) {
+        if let Ok(endpoint) = query.get(trigger.entity) {
+            commands.entity(endpoint.0).try_despawn();
+            commands.entity(trigger.entity).remove::<IrohLinkEndpoint>();
+        }
+    }
+
+    /// Creates a lightyear [`LinkOf`] entity for each accepted incoming session, once its
+    /// [`Session`] is established.
+    ///
+    /// `PeerAddr` is not copied here: `lightyear_aeronet` propagates it once [`AeronetLinkOf`] is
+    /// inserted, and relay-only sessions simply have none.
+    fn on_connection(
+        trigger: On<Add, Session>,
+        session_query: Query<&IrohSession>,
+        endpoint_query: Query<&AeronetLinkOf>,
+        server_query: Query<(), With<IrohServerIo>>,
+        mut commands: Commands,
+    ) {
+        let session_entity = trigger.entity;
+        let Ok(session) = session_query.get(session_entity) else {
             return;
         };
-        let Ok(server_link) = aeronet_query.get(child_of.parent()) else {
+        if session.side() != SessionSide::Incoming {
+            return;
+        }
+        let Ok(server) = endpoint_query.get(session.endpoint()) else {
             return;
         };
+        if !server_query.contains(server.0) {
+            return;
+        }
 
         // Spawn the lightyear LinkOf entity that represents this client
         // connection in the higher-level connection/transport/messages layers.
-        let mut link_spawn = commands.spawn((
-            LinkOf {
-                endpoint: server_link.0,
-            },
-            Link::default(),
-        ));
-
-        // PeerAddr is optional: relay-only connections have no direct socket
-        // address. Insert it only when available so downstream components that
-        // observe `On<Add, PeerAddr>` receive accurate data.
-        if let Some(peer_addr) = event.peer_addr {
-            link_spawn.insert(PeerAddr(peer_addr));
-        }
-
-        let link_entity = link_spawn.id();
+        let link_entity = commands
+            .spawn((
+                LinkOf { endpoint: server.0 },
+                Link::default(),
+                IrohRemoteId(session.peer_id()),
+            ))
+            .id();
 
         // Connect the aeronet session entity → lightyear link entity so that
         // `lightyear_aeronet`'s receive/send systems can bridge packet buffers.

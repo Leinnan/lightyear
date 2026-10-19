@@ -1,20 +1,23 @@
 #![cfg(all(feature = "client", feature = "server"))]
 
 use aeronet_io::connection::PeerAddr;
-use aeronet_iroh::iroh::{Endpoint as IrohEndpoint, endpoint::presets::Minimal};
-use aeronet_iroh::{IrohRuntime, RemoteEndpointId};
+use aeronet_iroh::IrohRuntime;
+use aeronet_iroh::endpoint::IrohEndpoint;
+use aeronet_iroh::iroh::{Endpoint as RawEndpoint, endpoint::Builder, endpoint::presets::Minimal};
 use bevy_app::App;
 use bevy_ecs::prelude::*;
-use lightyear_aeronet::AeronetLinkOf;
 use lightyear_connection::client::{Connected, Disconnect, Disconnected};
 use lightyear_connection::client_of::ClientOf;
 use lightyear_connection::server::{Started, Stop, Stopped};
 use lightyear_core::id::{LocalId, PeerId, RemoteId};
 use lightyear_iroh::client::{IrohClientIo, IrohClientPlugin};
 use lightyear_iroh::server::{IrohServerIo, IrohServerPlugin, SessionRequest, SessionResponse};
-use lightyear_iroh::{IrohConnectionPlugin, endpoint_id_to_peer_id};
+use lightyear_iroh::{
+    IrohConnectionPlugin, IrohLinkEndpoint, IrohRemoteId, endpoint_id_to_peer_id,
+};
 use lightyear_link::prelude::*;
-use std::time::{Duration, Instant};
+use core::time::Duration;
+use std::time::Instant;
 
 const ALPN: &[u8] = b"lightyear/merge-test";
 
@@ -26,17 +29,21 @@ fn runtime() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-fn endpoint(runtime: &tokio::runtime::Runtime) -> IrohEndpoint {
-    runtime.block_on(async {
-        IrohEndpoint::builder(Minimal)
-            .clear_ip_transports()
-            .bind_addr("127.0.0.1:0".parse::<std::net::SocketAddr>().unwrap())
-            .unwrap()
-            .alpns(vec![ALPN.to_vec()])
-            .bind()
-            .await
-            .unwrap()
-    })
+fn builder(alpns: &[&[u8]]) -> Builder {
+    RawEndpoint::builder(Minimal)
+        .clear_ip_transports()
+        .bind_addr("127.0.0.1:0".parse::<core::net::SocketAddr>().unwrap())
+        .unwrap()
+        .alpns(alpns.iter().map(|alpn| alpn.to_vec()).collect())
+}
+
+fn server_io() -> IrohServerIo {
+    IrohServerIo::new(|| builder(&[ALPN]))
+}
+
+/// The bound aeronet endpoint opened for a lightyear client/server entity.
+fn bound_endpoint(world: &World, entity: Entity) -> Option<&IrohEndpoint> {
+    world.get::<IrohEndpoint>(world.get::<IrohLinkEndpoint>(entity)?.0)
 }
 
 #[track_caller]
@@ -54,16 +61,9 @@ fn pump_until(app: &mut App, mut condition: impl FnMut(&mut World) -> bool) {
 
 #[test]
 fn promotes_endpoint_links_with_and_without_socket_addresses() {
-    let runtime = runtime();
-    let endpoint = endpoint(&runtime);
     let mut app = App::new();
     app.add_plugins(IrohConnectionPlugin);
-    let server = app
-        .world_mut()
-        .spawn(IrohServerIo {
-            endpoint: endpoint.clone(),
-        })
-        .id();
+    let server = app.world_mut().spawn(server_io()).id();
     assert!(app.world().get::<Server>(server).is_some());
     assert!(app.world().get::<Endpoint>(server).is_some());
     app.world_mut().entity_mut(server).insert(Linked);
@@ -78,7 +78,8 @@ fn promotes_endpoint_links_with_and_without_socket_addresses() {
             aeronet_iroh::iroh::SecretKey::from([if peer_addr.is_some() { 1 } else { 2 }; 32])
                 .public();
         app.world_mut()
-            .spawn((AeronetLinkOf(link), RemoteEndpointId(remote)));
+            .entity_mut(link)
+            .insert(IrohRemoteId(remote));
         app.world_mut().entity_mut(link).insert(Linked);
         assert!(app.world().get::<Connected>(link).is_some());
         assert!(app.world().get::<ClientOf>(link).is_some());
@@ -91,13 +92,10 @@ fn promotes_endpoint_links_with_and_without_socket_addresses() {
             Some(&LocalId(PeerId::Server))
         );
     }
-    runtime.block_on(endpoint.close());
 }
 
 #[test]
 fn stop_tolerates_a_client_despawned_by_another_observer() {
-    let runtime = runtime();
-    let endpoint = endpoint(&runtime);
     let mut app = App::new();
     app.add_observer(
         |_: On<Stop>, clients: Query<Entity, With<ClientOf>>, mut commands: Commands| {
@@ -107,15 +105,7 @@ fn stop_tolerates_a_client_despawned_by_another_observer() {
         },
     );
     app.add_plugins(IrohConnectionPlugin);
-    let server = app
-        .world_mut()
-        .spawn((
-            IrohServerIo {
-                endpoint: endpoint.clone(),
-            },
-            Started,
-        ))
-        .id();
+    let server = app.world_mut().spawn((server_io(), Started)).id();
     let client = app
         .world_mut()
         .spawn((LinkOf { endpoint: server }, ClientOf))
@@ -123,31 +113,24 @@ fn stop_tolerates_a_client_despawned_by_another_observer() {
     app.world_mut().trigger(Stop { entity: server });
     app.world_mut().flush();
     assert!(app.world().get_entity(client).is_err());
-    runtime.block_on(endpoint.close());
 }
 
 #[test]
 fn local_sessions_exchange_payloads_disconnect_and_stop() {
     let runtime = runtime();
-    let server_endpoint = endpoint(&runtime);
-    let client_endpoint = endpoint(&runtime);
     let mut app = App::new();
     app.insert_resource(IrohRuntime::from(runtime.handle().clone()));
     app.add_plugins((IrohClientPlugin, IrohServerPlugin, IrohConnectionPlugin));
     app.add_observer(|mut request: On<SessionRequest>| request.respond(SessionResponse::Accepted));
-    let server = app
-        .world_mut()
-        .spawn(IrohServerIo {
-            endpoint: server_endpoint.clone(),
-        })
-        .id();
+    let server = app.world_mut().spawn(server_io()).id();
     app.world_mut().trigger(LinkStart { entity: server });
     pump_until(&mut app, |world| world.get::<Started>(server).is_some());
+    let server_addr = bound_endpoint(app.world(), server).unwrap().addr();
     let client = app
         .world_mut()
         .spawn(IrohClientIo::from_addr(
-            client_endpoint.clone(),
-            server_endpoint.addr(),
+            || builder(&[]),
+            server_addr,
             ALPN.to_vec(),
         ))
         .id();
@@ -171,7 +154,9 @@ fn local_sessions_exchange_payloads_disconnect_and_stop() {
     );
     assert_eq!(
         app.world().get::<RemoteId>(accepted),
-        Some(&RemoteId(endpoint_id_to_peer_id(client_endpoint.id())))
+        Some(&RemoteId(endpoint_id_to_peer_id(
+            bound_endpoint(app.world(), client).unwrap().id()
+        )))
     );
     app.world_mut()
         .get_mut::<Link>(client)
@@ -207,8 +192,4 @@ fn local_sessions_exchange_payloads_disconnect_and_stop() {
         world.get::<Stopped>(server).is_some() && world.get_entity(accepted).is_err()
     });
     drop(app);
-    runtime.block_on(async {
-        client_endpoint.close().await;
-        server_endpoint.close().await;
-    });
 }
