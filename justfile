@@ -19,10 +19,7 @@ clippy:
     cargo clippy --features=lightyear_core/not_mock,avian3d/f32 --workspace --exclude=compiletime --exclude=avian_3d --exclude=launcher --exclude=delta_compression --no-deps -- -D warnings -A clippy::needless_lifetimes
     cargo clippy -p avian_3d --all-features --no-deps -- -D warnings
     cargo clippy -p launcher --all-features --no-deps -- -D warnings
-
-# Run two conditioned simple-box peers and verify remote prediction rollback plus convergence.
-simple_box_p2p_smoke:
-    bash examples/simple_box/p2p_smoke.sh
+    cargo clippy -p lightyear_iroh --all-features --all-targets --no-deps -- -D warnings
 
 # jq filters shared by the example/demo build recipe.
 [private]
@@ -203,14 +200,15 @@ test:
     # You can't use `--all-features` because of conflict between `avian2d` and `avian3d`.
     cargo test -p lightyear --no-default-features --features="std client server replication \
     interpolation trace metrics netcode webtransport webtransport_self_signed webtransport_dangerous_configuration \
-    input_native leafwing input_bei avian2d lightyear_avian2d/f32 udp websocket crossbeam steam"
+    input_native leafwing input_bei avian2d lightyear_avian2d/f32 avian2d/parry-f32 udp websocket crossbeam steam"
     cargo test -p lightyear --no-default-features --features="std client server replication \
     interpolation trace metrics netcode webtransport webtransport_self_signed webtransport_dangerous_configuration \
-    input_native leafwing input_bei avian3d lightyear_avian3d/f32 udp websocket crossbeam steam"
+    input_native leafwing input_bei avian3d lightyear_avian3d/f32 avian3d/parry-f32 udp websocket crossbeam steam"
+    cargo test -p lightyear_iroh --all-features
     cargo test -p lightyear_aeronet --all-features
     # You can't use `--all-features` because of conflict between `avian2d` and `avian3d`.
-    cargo test -p lightyear_avian --no-default-features --features="std 2d lag_compensation"
-    cargo test -p lightyear_avian --no-default-features --features="std 3d lag_compensation"
+    cargo test -p lightyear_avian2d --features="lag_compensation"
+    cargo test -p lightyear_avian3d --features="lag_compensation"
     cargo test -p lightyear_connection --all-features
     cargo test -p lightyear_core --all-features
     cargo test -p lightyear_crossbeam --all-features

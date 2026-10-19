@@ -12,7 +12,7 @@ pub enum IrohError {
     RuntimeMissing,
 }
 
-pub use connection::{endpoint_id_to_peer_id, IrohConnectionPlugin};
+pub use connection::{IrohConnectionPlugin, endpoint_id_to_peer_id};
 
 /// Gossip-based room discovery using iroh-gossip.
 ///
@@ -29,8 +29,8 @@ pub mod discovery {
 }
 
 pub mod prelude {
-    pub use crate::connection::IrohConnectionPlugin;
     pub use crate::IrohError;
+    pub use crate::connection::IrohConnectionPlugin;
     pub use aeronet_iroh::IrohRuntime;
 
     #[cfg(feature = "client")]

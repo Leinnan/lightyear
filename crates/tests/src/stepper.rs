@@ -20,9 +20,8 @@ use lightyear_raw_connection::client::RawClient;
 use lightyear_raw_connection::server::RawServer;
 use lightyear_replication::receive::ReplicationReceiver;
 #[cfg(feature = "std")]
-use lightyear_udp::server::{ServerUdpIo, ServerUdpPlugin};
-#[cfg(feature = "std")]
-use lightyear_udp::{UdpIo, UdpPlugin};
+use lightyear_udp::UdpIo;
+use lightyear_udp::server::ServerUdpIo;
 
 pub const SERVER_PORT: u16 = 56789;
 pub const SERVER_ADDR: SocketAddr =
@@ -320,10 +319,6 @@ impl ClientServerStepper {
             server_app.add_steam_resources(STEAM_APP_ID);
         }
         server_app.add_plugins((server::ServerPlugins { tick_duration }, RoomPlugin));
-        #[cfg(feature = "std")]
-        if io == IoType::Udp {
-            server_app.add_plugins(ServerUdpPlugin);
-        }
         server_app.add_observer(configure_server_link);
         // ProtocolPlugin needs to be added AFTER InputPlugin
         server_app.add_plugins(ProtocolPlugin { avian_mode });
@@ -345,24 +340,28 @@ impl ClientServerStepper {
             ServerType::Steam => {
                 let server_addr =
                     SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, SERVER_PORT));
-                server.insert(SteamServerIo {
-                    target: ListenTarget::Addr(server_addr),
-                    config: SessionConfig::default(),
-                });
+                server.insert((
+                    SteamEndpoint {
+                        target: ListenTarget::Addr(server_addr),
+                        config: SessionConfig::default(),
+                    },
+                    Server,
+                ));
             }
         }
         #[cfg(feature = "std")]
         if io == IoType::Udp {
-            server.insert((LocalAddr(server_addr), ServerUdpIo::default()));
+            server.insert((LocalAddr(server_addr), ServerUdpIo));
         }
         #[cfg(all(feature = "webtransport", not(target_family = "wasm")))]
         if io == IoType::WebTransport {
             server.insert((
                 LocalAddr(server_addr),
-                WebTransportServerIo {
+                WebTransportEndpoint {
                     certificate: Identity::self_signed(["localhost", "127.0.0.1", "::1"])
                         .expect("test WebTransport identity should be valid"),
                 },
+                Server,
             ));
         }
         let server_entity = server.id();
@@ -406,10 +405,6 @@ impl ClientServerStepper {
         client_app.add_plugins(client::ClientPlugins {
             tick_duration: self.tick_duration,
         });
-        #[cfg(feature = "std")]
-        if self.io == IoType::Udp {
-            client_app.add_plugins(UdpPlugin);
-        }
         // ProtocolPlugin needs to be added AFTER ClientPlugins, InputPlugin, because we need the PredictionRegistry to exist
         client_app.add_plugins(ProtocolPlugin {
             avian_mode: self.avian_mode,
@@ -438,7 +433,7 @@ impl ClientServerStepper {
                         // Client + LinkOf = HostServer
                         Client,
                         LinkOf {
-                            server: self.server_entity,
+                            endpoint: self.server_entity,
                         },
                         // TODO: maybe don't add Link either?
                         Link::default(),
@@ -470,7 +465,7 @@ impl ClientServerStepper {
                         .world_mut()
                         .spawn((
                             LinkOf {
-                                server: self.server_entity,
+                                endpoint: self.server_entity,
                             },
                             Link::default(),
                             PeerAddr(SocketAddr::new(
@@ -752,7 +747,7 @@ impl ClientServerStepper {
             >();
             query
                 .iter(world)
-                .filter(|(_, link_of, _)| link_of.server == server_entity)
+                .filter(|(_, link_of, _)| link_of.endpoint == server_entity)
                 .map(|(entity, _, remote_id)| (entity, remote_id.map(|id| id.0)))
                 .collect::<Vec<_>>()
         };

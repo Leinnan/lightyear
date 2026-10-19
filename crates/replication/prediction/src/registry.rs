@@ -362,17 +362,21 @@ impl PredictionRegistry {
             .custom_correction = true;
     }
 
+    /// Sets the correction function applied to `C`.
+    ///
+    /// Returns true if there was already a correction function present.
     fn set_correction_fn<C: SyncComponent>(
         &mut self,
         correction: correction::ErasedPostRollbackCorrection,
-    ) {
+    ) -> bool {
         let metadata = self
             .prediction_map
             .get_mut(&ComponentKind::of::<C>())
             .expect(
                 "The component has not been registered for prediction. Did you call `.predict()`?",
             );
-        metadata.correction = Some(correction);
+
+        metadata.correction.replace(correction).is_some()
     }
 
     pub(crate) fn post_rollback_corrections(
@@ -440,13 +444,14 @@ impl PredictionRegistry {
         &self,
         confirmed: Option<&C>,
         predicted: Option<&C>,
+        entity: Entity,
     ) -> bool {
         match (confirmed, predicted) {
             (Some(c), Some(p)) => {
                 let should = self.should_rollback(c, p);
                 if should {
                     debug!(
-                        "Should Rollback! Confirmed value {c:?} is different from predicted value {p:?}",
+                        "Should Rollback! Confirmed value {c:?} is different from predicted value {p:?} on entity {entity}",
                     );
                     trace!(
                         target: "lightyear_debug::prediction",
@@ -466,7 +471,7 @@ impl PredictionRegistry {
             }
             (Some(c), None) => {
                 debug!(
-                    "Should Rollback! Confirmed component exists ({c:?}), but predicted value does not exists",
+                    "Should Rollback! Confirmed component exists ({c:?}), but predicted value does not exist on entity {entity}",
                 );
                 trace!(
                     target: "lightyear_debug::prediction",
@@ -484,7 +489,7 @@ impl PredictionRegistry {
             }
             (None, Some(p)) => {
                 debug!(
-                    "Should Rollback! Confirmed component does not exist, but predicted value exists ({p:?})",
+                    "Should Rollback! Confirmed component does not exist, but predicted value exists ({p:?}) on entity {entity}",
                 );
                 trace!(
                     target: "lightyear_debug::prediction",
@@ -608,7 +613,7 @@ impl PredictionRegistry {
             );
             return false;
         };
-        self.should_rollback_check(confirmed_value.as_ref(), predicted_state.value())
+        self.should_rollback_check(confirmed_value.as_ref(), predicted_state.value(), entity_id)
     }
 
     /// Add an authoritative value to confirmed history.
@@ -1282,11 +1287,14 @@ impl<C> PredictionRegistrationExt<C> for ComponentRegistration<'_, C> {
             self.app.world_mut(),
             correction_fn,
         );
-        self.app
+        let replaced = self
+            .app
             .world_mut()
             .resource_mut::<PredictionRegistry>()
             .set_correction_fn::<C>(correction_fn);
-        correction::add_correction_systems::<C, D>(self.app);
+        if !replaced {
+            correction::add_correction_systems::<C, D>(self.app);
+        }
         self
     }
 

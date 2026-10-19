@@ -494,6 +494,8 @@ pub mod prelude {
         )]
         pub type Replicated = Remote;
 
+        #[cfg(feature = "iroh")]
+        pub use lightyear_iroh::prelude::client::*;
         #[cfg(feature = "netcode")]
         pub use lightyear_netcode::prelude::client::*;
         #[cfg(feature = "raw_connection")]
@@ -502,8 +504,6 @@ pub mod prelude {
         pub use lightyear_steam::prelude::client::*;
         #[cfg(feature = "websocket")]
         pub use lightyear_websocket::prelude::client::*;
-        #[cfg(feature = "iroh")]
-        pub use lightyear_iroh::prelude::client::*;
         #[cfg(feature = "webtransport")]
         pub use lightyear_webtransport::prelude::client::*;
 
@@ -522,18 +522,18 @@ pub mod prelude {
         #[cfg(all(not(target_family = "wasm"), feature = "udp", feature = "server"))]
         pub use lightyear_udp::prelude::server::*;
 
+        #[cfg(feature = "iroh")]
+        pub use lightyear_iroh::prelude::server::*;
         #[cfg(feature = "netcode")]
         pub use lightyear_netcode::prelude::server::*;
         #[cfg(feature = "raw_connection")]
         pub use lightyear_raw_connection::prelude::server::*;
         #[cfg(feature = "steam")]
-        pub use lightyear_steam::prelude::server::*;
+        pub use lightyear_steam::prelude::endpoint::*;
         #[cfg(all(feature = "websocket", not(target_family = "wasm")))]
-        pub use lightyear_websocket::prelude::server::*;
-        #[cfg(feature = "iroh")]
-        pub use lightyear_iroh::prelude::server::*;
+        pub use lightyear_websocket::prelude::endpoint::*;
         #[cfg(all(feature = "webtransport", not(target_family = "wasm")))]
-        pub use lightyear_webtransport::prelude::server::*;
+        pub use lightyear_webtransport::prelude::endpoint::*;
 
         #[cfg(any(feature = "input_native", feature = "leafwing", feature = "input_bei"))]
         pub mod input {

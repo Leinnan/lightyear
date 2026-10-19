@@ -97,11 +97,16 @@ deterministic = [
   "lightyear_avian3d?/deterministic",
 ]
 ## Enables peer-to-peer topology, synchronization, input routing, and deterministic sessions.
+## Also enables accepting endpoints in selected transports, without enabling `server`.
 p2p = [
   "client",
   "dep:lightyear_p2p",
   "lightyear_deterministic_replication?/p2p",
   "lightyear_prediction?/p2p",
+  "lightyear_steam?/p2p",
+  "lightyear_udp?/p2p",
+  "lightyear_webtransport?/p2p",
+  "lightyear_websocket?/p2p",
 ]
 ## Enables replicating entities between two peers
 replication = [
@@ -180,6 +185,8 @@ crossbeam = ["dep:lightyear_crossbeam"]
 ## Enable WebTransport support as an IO layer (defers to aeronet_webtransport)
 webtransport = ["std", "dep:lightyear_webtransport"]
 webtransport_self_signed = ["lightyear_webtransport/self-signed"]
+## Peer discovery over WebTransport, via `lightyear_webtransport::lobby`.
+webtransport_lobby = ["lightyear_webtransport/lobby"]
 ## Enable unsafe configurations for WebTransport (e.g. allowing unencrypted connections) as a convenience for testing
 webtransport_dangerous_configuration = [
   "lightyear_webtransport/dangerous-configuration",
@@ -191,6 +198,8 @@ websocket_self_signed = ["lightyear_websocket/self-signed"]
 iroh = ["std", "dep:lightyear_iroh"]
 ## Enable gossip-based room discovery via iroh (requires iroh feature, native-only)
 iroh_discovery = ["iroh", "lightyear_iroh/discovery"]
+## Peer discovery over WebSocket, via `lightyear_websocket::lobby`.
+websocket_lobby = ["lightyear_websocket/lobby"]
 
 # CONNECTION LAYERS
 ## Enables Steam as a connection layer

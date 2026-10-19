@@ -28,12 +28,13 @@ use core::fmt::{Debug, Formatter};
 use core::time::Duration;
 use lightyear_connection::client::Connected;
 use lightyear_connection::host::HostServer;
+use lightyear_connection::identity::is_server;
 use lightyear_connection::prelude::NetworkTarget;
 use lightyear_connection::server::Started;
 use lightyear_core::id::RemoteId;
 use lightyear_core::prelude::LocalTimeline;
 use lightyear_core::tick::{Tick, TickDuration};
-use lightyear_link::prelude::{LinkOf, Server};
+use lightyear_link::prelude::{Endpoint, LinkOf};
 use lightyear_messages::plugin::MessageSystems;
 use lightyear_messages::prelude::MessageReceiver;
 use lightyear_messages::server::ServerMultiMessageSender;
@@ -105,6 +106,8 @@ pub enum InputSystems {
     /// [`InputValidationAppExt::add_input_validator`]) that mutate or drop
     /// messages via [`MessageReceiver::retain_messages`]. A game that wants to
     /// authorize input targets against `ControlledBy` can do so here.
+    ///
+    /// Runs only on the server ([`is_server`]).
     ValidateInputs,
     /// Receive the latest ActionDiffs from the client
     ReceiveInputs,
@@ -270,6 +273,10 @@ impl<S: ActionStateSequence + MapEntities> Plugin for ServerInputPlugin<S> {
             )
                 .chain(),
         );
+        // In a server-client setup, input validation should not be run on the client. Any input
+        // received by a client is a rebroadcast input from the server and clients have no
+        // control over the incoming inputs' targets.
+        app.configure_sets(PreUpdate, InputSystems::ValidateInputs.run_if(is_server));
         app.configure_sets(FixedPreUpdate, InputSystems::UpdateActionState);
 
         // for host server mode?
@@ -297,7 +304,7 @@ impl<S: ActionStateSequence + MapEntities> Plugin for ServerInputPlugin<S> {
 /// Read the input messages from the server events to update the InputBuffers
 fn receive_input_message<S: ActionStateSequence>(
     config: Res<InputConfig<S::Action>>,
-    server: Query<&Server>,
+    server: Query<&Endpoint>,
     // make sure to only rebroadcast inputs to connected clients
     #[cfg_attr(not(feature = "prediction"), allow(unused_mut))]
     mut sender: ServerMultiMessageSender<With<Connected>>,
@@ -329,7 +336,7 @@ fn receive_input_message<S: ActionStateSequence>(
     // TODO: use par_iter_mut
     receivers.iter_mut().try_for_each(|(client_entity, link_of, mut receiver, client_id, rebroadcaster)| {
 
-        let server_entity = link_of.server;
+        let server_entity = link_of.endpoint;
         let tick = timeline.tick();
         // NOTE: receive drains the messages. Users who need the messages can observe them earlier via
         // input validators, which run before this system.

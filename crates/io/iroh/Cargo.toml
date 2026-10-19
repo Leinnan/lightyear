@@ -34,3 +34,6 @@ bevy_app.workspace = true
 bevy_ecs.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "time", "net"] }

@@ -22,6 +22,8 @@ targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
 [features]
 default = ["self-signed"]
 client = ["aeronet_websocket/client"]
+## Enables native accepting endpoints without selecting a Lightyear server role.
+p2p = ["aeronet_websocket/server", "bevy_reflect/std"]
 server = ["aeronet_websocket/server", "bevy_reflect/std"]
 
 ## Enables `wtransport/self-signed`, allowing you to generate self-signed certificates easily for
@@ -31,10 +33,20 @@ server = ["aeronet_websocket/server", "bevy_reflect/std"]
 ## connect to a server with self-signed certificates.
 self-signed = ["aeronet_websocket/self-signed"]
 
+## Peer discovery over WebSocket: dials peers a `lightyear_p2p::Lobby` discovers, and annotates the
+## sessions they open towards this endpoint. Needs both halves of the transport, since one peer
+## dials and the other accepts.
+lobby = ["client", "p2p", "dep:lightyear_p2p", "dep:lightyear_connection"]
+
 [dependencies]
 aeronet_websocket.workspace = true
 aeronet_io.workspace = true
 lightyear_link.workspace = true
+lightyear_core.workspace = true
+lightyear_p2p = { workspace = true, optional = true, features = ["std"] }
+lightyear_connection = { workspace = true, optional = true, features = [
+  "client",
+] }
 lightyear_aeronet.workspace = true
 
 tracing.workspace = true

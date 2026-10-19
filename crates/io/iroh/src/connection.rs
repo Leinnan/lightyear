@@ -135,7 +135,9 @@ impl IrohConnectionPlugin {
             trace!(entity = ?trigger.entity, "IrohClient Disconnect → Unlink");
             commands.trigger(Unlink {
                 entity: trigger.entity,
-                reason: UnlinkReason::UserRequested(Some("Client requested disconnect".to_string())),
+                reason: UnlinkReason::UserRequested(Some(
+                    "Client requested disconnect".to_string(),
+                )),
             });
         }
     }
@@ -152,6 +154,20 @@ impl IrohConnectionPlugin {
         if query.get(trigger.entity).is_ok() {
             trace!(entity = ?trigger.entity, "IrohServer Linked → Started");
             commands.entity(trigger.entity).insert(Started);
+        }
+    }
+
+    /// Complete an explicit stop after the asynchronous endpoint close finishes.
+    /// The shared connection observer handles `Started`, but `Stop` has already
+    /// replaced that marker with `Stopping` by the time Aeronet reports closure.
+    #[cfg(feature = "server")]
+    fn on_server_unlinked(
+        trigger: On<Add, Unlinked>,
+        query: Query<(), (With<IrohServerIo>, With<Stopping>)>,
+        mut commands: Commands,
+    ) {
+        if query.get(trigger.entity).is_ok() {
+            commands.entity(trigger.entity).insert(Stopped);
         }
     }
 
@@ -185,7 +201,7 @@ impl IrohConnectionPlugin {
         let Ok(link_of) = link_of_query.get(trigger.entity) else {
             return;
         };
-        if server_query.get(link_of.server).is_err() {
+        if server_query.get(link_of.endpoint).is_err() {
             return;
         }
 
@@ -217,7 +233,7 @@ impl IrohConnectionPlugin {
     fn on_server_stop(
         trigger: On<Stop>,
         mut commands: Commands,
-        server_query: Query<&Server, (Without<Stopped>, With<IrohServerIo>)>,
+        server_query: Query<&Endpoint, (Without<Stopped>, With<IrohServerIo>)>,
         client_query: Query<Entity, (With<ClientOf>, Without<HostClient>)>,
     ) -> Result {
         let Ok(server) = server_query.get(trigger.entity) else {
@@ -230,13 +246,13 @@ impl IrohConnectionPlugin {
         });
         commands.entity(trigger.entity).insert(Stopping);
 
-        // SAFETY: the Server relationship collection contains unique entities.
+        // SAFETY: the Endpoint relationship collection contains unique entities.
         let client_entities: &[Entity] = server.collection();
         let unique_slice = unsafe { UniqueEntitySlice::from_slice_unchecked(client_entities) };
         client_query
             .iter_many_unique(unique_slice)
             .for_each(|entity| {
-                commands.entity(entity).insert(Disconnecting);
+                commands.entity(entity).try_insert(Disconnecting);
             });
         Ok(())
     }
@@ -271,6 +287,7 @@ impl Plugin for IrohConnectionPlugin {
         #[cfg(feature = "server")]
         {
             app.add_observer(Self::on_server_linked);
+            app.add_observer(Self::on_server_unlinked);
             app.add_observer(Self::on_link_of_linked);
             app.add_observer(Self::on_server_stop);
         }

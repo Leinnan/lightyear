@@ -1,11 +1,11 @@
 use aeronet_io::connection::PeerAddr;
+use aeronet_iroh::SessionEstablished;
 use aeronet_iroh::iroh::Endpoint;
 use aeronet_iroh::server::{IrohServer, IrohServerClient};
 pub use aeronet_iroh::server::{SessionRequest, SessionResponse};
-use aeronet_iroh::SessionEstablished;
 use bevy_app::{App, Plugin};
 use bevy_ecs::prelude::*;
-use lightyear_aeronet::server::ServerAeronetPlugin;
+use lightyear_aeronet::endpoint::EndpointAeronetPlugin;
 use lightyear_aeronet::{AeronetLinkOf, AeronetPlugin};
 use lightyear_link::prelude::LinkOf;
 use lightyear_link::server::Server;
@@ -38,8 +38,8 @@ impl Plugin for IrohServerPlugin {
         if !app.is_plugin_added::<AeronetPlugin>() {
             app.add_plugins(AeronetPlugin);
         }
-        if !app.is_plugin_added::<ServerAeronetPlugin>() {
-            app.add_plugins(ServerAeronetPlugin);
+        if !app.is_plugin_added::<EndpointAeronetPlugin>() {
+            app.add_plugins(EndpointAeronetPlugin);
         }
         app.add_plugins(aeronet_iroh::server::IrohServerPlugin);
         app.add_observer(Self::link);
@@ -100,7 +100,7 @@ impl IrohServerPlugin {
         // connection in the higher-level connection/transport/messages layers.
         let mut link_spawn = commands.spawn((
             LinkOf {
-                server: server_link.0,
+                endpoint: server_link.0,
             },
             Link::default(),
         ));
