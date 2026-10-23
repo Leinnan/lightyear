@@ -4,6 +4,7 @@ members = [
   "crates/core/lightyear",
   "crates/io/aeronet",
   "crates/io/crossbeam",
+  "crates/io/iroh",
   "crates/io/link",
   "crates/io/udp",
   "crates/io/websocket",
@@ -181,6 +182,7 @@ metrics-util = "0.20"
 aeronet_webtransport = { version = "0.22.0-rc.1" }
 aeronet_websocket = { version = "0.22.0-rc.1" }
 aeronet_steam = { version = "0.22.0-rc.1" }
+aeronet_iroh = { git = "https://github.com/Leinnan/aeronet", branch = "bevy-0.20-original-iroh" }
 wtransport = "0.7.1"
 aeronet_io = { version = "0.22.0-rc.1" }
 # we don't need any tokio features, we use only use the tokio channels
