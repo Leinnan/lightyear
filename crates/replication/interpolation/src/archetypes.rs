@@ -3,12 +3,13 @@ use crate::registry::{
 };
 use crate::rules::{CachedInterpolationApply, CachedInterpolationComponent};
 use alloc::vec::Vec;
+use bevy_ecs::system::SystemAccess;
 use bevy_ecs::{
     archetype::{ArchetypeGeneration, ArchetypeId, Archetypes},
     change_detection::Tick as ChangeTick,
     component::{ComponentId, Components},
     prelude::*,
-    query::{FilteredAccess, FilteredAccessSet},
+    query::FilteredAccess,
     system::{SystemMeta, SystemParam, SystemParamValidationError},
     world::{FromWorld, unsafe_world_cell::UnsafeWorldCell},
 };
@@ -80,19 +81,23 @@ unsafe impl SystemParam for InterpolationWorld<'_, '_> {
     fn init_access(
         state: &Self::State,
         _system_meta: &mut SystemMeta,
-        component_access_set: &mut FilteredAccessSet,
+        system_access: &mut SystemAccess,
         world: &mut World,
     ) {
         let mut filtered_access = FilteredAccess::default();
-        filtered_access.add_read(state.interpolated_component_id);
+        filtered_access.and_with(state.interpolated_component_id);
 
         if let Some(registry) = world.get_resource::<InterpolationRegistry>() {
             for component_id in registry.component_write_ids() {
-                filtered_access.add_write(component_id);
+                // Histories and live values need not all be present on the same entity.
+                filtered_access.access_mut().add_write(component_id);
             }
         }
 
-        component_access_set.add(filtered_access);
+        let access = filtered_access;
+        system_access.try_add(access).expect(
+            "error[B0001]: dynamic component access conflicts with a previous system parameter",
+        );
     }
 
     unsafe fn get_param<'world, 'state>(
@@ -226,6 +231,8 @@ mod tests {
     use crate::registry::{InterpolationRegistry, component_rule, insert_confirmed_history};
     use crate::rules::{InterpolationFns, InterpolationRuleConfig};
     use bevy_ecs::query::With;
+    use bevy_ecs::system::SystemState;
+    use lightyear_core::prelude::ConfirmedHistory;
 
     #[derive(Component, Clone, Debug, PartialEq)]
     struct Value(f32);
@@ -241,6 +248,29 @@ mod tests {
 
     fn lerp(start: Value, end: Value, t: f32) -> Value {
         Value(start.0 + (end.0 - start.0) * t)
+    }
+
+    #[test]
+    #[should_panic(expected = "error[B0001]")]
+    fn interpolation_rejects_conflicting_history_query_without_live_value() {
+        let mut world = World::new();
+        let rule = component_rule::<Value, ()>(
+            &mut world,
+            InterpolationFns::interpolate(lerp),
+            InterpolationRuleConfig::default(),
+            update_history_archetype_erased::<Value>,
+            insert_confirmed_history::<Value>,
+        );
+        let mut registry = InterpolationRegistry::default();
+        registry.insert_rule(rule);
+        registry.finalize();
+        world.insert_resource(registry);
+
+        // History updates also access entities whose live value is absent.
+        SystemState::<(
+            InterpolationWorld,
+            Query<&mut ConfirmedHistory<Value>, Without<Value>>,
+        )>::new(&mut world);
     }
 
     /// Checks that unrelated components share a policy while `With` and `Without` inputs do not.

@@ -1,6 +1,6 @@
 [package]
 name = "lightyear_replication"
-version = "0.30.1"
+version = "0.31.0"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -76,4 +76,4 @@ workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
-features = ["avian2d/2d", "avian2d/f32", "avian3d/3d", "avian3d/f32"]
+features = ["avian2d/2d", "avian3d/3d"]

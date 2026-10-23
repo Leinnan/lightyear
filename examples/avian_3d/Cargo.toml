@@ -1,6 +1,6 @@
 [package]
 name = "avian_3d"
-version = "0.30.1"
+version = "0.31.0"
 authors = ["Charles Bournhonesque <charlesbour@gmail.com>"]
 edition = "2021"
 publish = false
@@ -45,7 +45,6 @@ leafwing-input-manager = { workspace = true, default-features = false, features 
 ] }
 avian3d = { workspace = true, features = [
   "3d",
-  "f32",
   "parry-f32",
   "parallel",
   "serialize",

@@ -1,6 +1,6 @@
 [package]
 name = "lightyear_tools"
-version = "0.30.1"
+version = "0.31.0"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -46,6 +46,7 @@ bevy_log = { workspace = true, optional = true }
 bevy_platform.workspace = true
 bevy_reflect.workspace = true
 bevy_ui.workspace = true
+bevy_ui_widgets.workspace = true
 bevy_utils.workspace = true
 bevy_text.workspace = true
 bevy_time.workspace = true

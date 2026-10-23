@@ -1,6 +1,6 @@
 [package]
 name = "avian_2d"
-version = "0.30.1"
+version = "0.31.0"
 authors = ["Charles Bournhonesque <charlesbour@gmail.com>"]
 edition = "2021"
 publish = false
@@ -42,7 +42,6 @@ lightyear_deterministic_replication.workspace = true
 leafwing-input-manager.workspace = true
 avian2d = { workspace = true, features = [
   "2d",
-  "f32",
   "parry-f32",
   "parallel",
   "serialize",
