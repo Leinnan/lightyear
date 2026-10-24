@@ -99,6 +99,7 @@ lightyear = { path = "crates/core/lightyear", version = "0.31.0", default-featur
 lightyear_transport = { path = "crates/transport/transport", version = "0.31.0", default-features = false }
 lightyear_prediction = { path = "crates/replication/prediction", version = "0.31.0", default-features = false }
 lightyear_link = { path = "crates/io/link", version = "0.31.0", default-features = false }
+lightyear_iroh = { path = "crates/io/iroh", version = "0.31.0", default-features = false }
 lightyear_raw_connection = { path = "crates/connection/raw_connection", version = "0.31.0", default-features = false }
 lightyear_replication = { path = "crates/replication/replication", version = "0.31.0", default-features = false }
 lightyear_serde = { path = "crates/transport/serde", version = "0.31.0", default-features = false }
@@ -296,3 +297,8 @@ module_inception = "allow"
 alloc_instead_of_core = "warn"
 std_instead_of_alloc = "warn"
 std_instead_of_core = "warn"
+
+# aeronet_iroh depends on the in-repo aeronet_io of its fork; share that single copy with the
+# crates.io aeronet crates (identical source) so `Session` and friends are the same types.
+[patch.crates-io]
+aeronet_io = { git = "https://github.com/Leinnan/aeronet", branch = "bevy-0.20-original-iroh" }

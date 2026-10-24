@@ -110,7 +110,7 @@ impl IrohConnectionPlugin {
     /// and sets [`RemoteId`] to [`PeerId::Server`].
     #[cfg(feature = "client")]
     fn on_client_linked(
-        trigger: On<Add, Linked>,
+        trigger: On<Add<Linked>>,
         query: Query<&IrohLinkEndpoint, (With<IrohClientIo>, Without<Connected>)>,
         endpoint_query: Query<&IrohEndpoint>,
         mut commands: Commands,
@@ -157,7 +157,7 @@ impl IrohConnectionPlugin {
     /// For iroh servers, `Linked` implies `Started`.
     #[cfg(feature = "server")]
     fn on_server_linked(
-        trigger: On<Add, Linked>,
+        trigger: On<Add<Linked>>,
         query: Query<(), (With<IrohServerIo>, Without<Started>)>,
         mut commands: Commands,
     ) {
@@ -172,7 +172,7 @@ impl IrohConnectionPlugin {
     /// replaced that marker with `Stopping` by the time the server is unlinked.
     #[cfg(feature = "server")]
     fn on_server_unlinked(
-        trigger: On<Add, Unlinked>,
+        trigger: On<Add<Unlinked>>,
         query: Query<(), (With<IrohServerIo>, With<Stopping>)>,
         mut commands: Commands,
     ) {
@@ -191,7 +191,7 @@ impl IrohConnectionPlugin {
     /// which should not happen in practice.
     #[cfg(feature = "server")]
     fn on_link_of_linked(
-        trigger: On<Add, Linked>,
+        trigger: On<Add<Linked>>,
         link_of_query: Query<(&LinkOf, Option<&IrohRemoteId>), Without<Connected>>,
         server_query: Query<(), With<IrohServerIo>>,
         mut commands: Commands,
@@ -247,6 +247,7 @@ impl IrohConnectionPlugin {
         let unique_slice = unsafe { UniqueEntitySlice::from_slice_unchecked(client_entities) };
         client_query
             .iter_many_unique(unique_slice)
+            .matched()
             .for_each(|entity| {
                 commands.entity(entity).try_insert(Disconnecting);
             });

@@ -96,7 +96,7 @@ impl IrohServerPlugin {
 
     /// The endpoint has bound: the server is linked.
     fn on_opened(
-        trigger: On<Add, IrohEndpoint>,
+        trigger: On<Add<IrohEndpoint>>,
         endpoint_query: Query<&AeronetLinkOf>,
         server_query: Query<(), With<IrohServerIo>>,
         mut commands: Commands,
@@ -127,7 +127,7 @@ impl IrohServerPlugin {
     /// Close the endpoint whenever the server becomes unlinked. `EndpointLinkPlugin` already
     /// unlinks and despawns the server's [`LinkOf`] entities.
     fn on_unlinked(
-        trigger: On<Add, Unlinked>,
+        trigger: On<Add<Unlinked>>,
         query: Query<&IrohLinkEndpoint, With<IrohServerIo>>,
         mut commands: Commands,
     ) {
@@ -143,7 +143,7 @@ impl IrohServerPlugin {
     /// `PeerAddr` is not copied here: `lightyear_aeronet` propagates it once [`AeronetLinkOf`] is
     /// inserted, and relay-only sessions simply have none.
     fn on_connection(
-        trigger: On<Add, Session>,
+        trigger: On<Add<Session>>,
         session_query: Query<&IrohSession>,
         endpoint_query: Query<&AeronetLinkOf>,
         server_query: Query<(), With<IrohServerIo>>,

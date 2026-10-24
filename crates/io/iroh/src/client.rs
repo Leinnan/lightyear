@@ -139,7 +139,7 @@ impl IrohClientPlugin {
 
     /// The local endpoint has bound: connect to the target.
     fn on_opened(
-        trigger: On<Add, IrohEndpoint>,
+        trigger: On<Add<IrohEndpoint>>,
         endpoint_query: Query<(&IrohEndpoint, &IrohClientEndpointOf)>,
         client_query: Query<&IrohClientIo>,
         mut commands: Commands,
@@ -170,7 +170,7 @@ impl IrohClientPlugin {
 
     /// Close the local endpoint whenever the client becomes unlinked.
     fn on_unlinked(
-        trigger: On<Add, Unlinked>,
+        trigger: On<Add<Unlinked>>,
         query: Query<&IrohLinkEndpoint, With<IrohClientIo>>,
         mut commands: Commands,
     ) {
